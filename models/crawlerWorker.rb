@@ -1,28 +1,46 @@
+require 'redis'
+require 'json'
+require 'mechanize'
+require './models/worker.rb'
+require './models/page.rb'
+
 class CrawlerWorker < Worker
-	def startListening
-		currentJob = @redis.lpop("jobsToDo")
 
-		if !currentJob.nil?
-			jobParsed = JSON.parse currentJob
-			job = Worker.new
-			job.setJob(jobParsed['task'], jobParsed['url'])
+	def doJob
+		self.clear
+		jobToDo = @redis.lpop("jobsToDo")
 
-			puts "#{job.task} on #{job.url}"
-			saveWebPage(job.url)
-			@redis.rpush('jobsDone', job.toJson)
+		if !jobToDo.nil?
+			jobParsed = JSON.parse jobToDo
+			self.setJob(jobParsed['task'], jobParsed['url'])
 
-			#self.showJobsToDo
-			#self.showJobsDone
+			puts "#{self.task} on #{self.url}"
+			saveWebPage(self.url)
+			@redis.rpush('jobsDone', self.toJson)
+
+			self.showJobsToDo
+			self.showJobsDone
 		end
 	end
 
 	def saveWebPage(url)
 		webPage = Mechanize.new.get(url)
-		# webPage.title
-		# puts webPage.body
+		keywords = webPage.at('meta[@name="keywords"]')
+		descrition = webPage.at('meta[name="description"]')
 
-		# TODO
-		
+		pageDB = Page.new
+		pageDB.title = webPage.title
+		pageDB.url = url
+		if(!keywords.nil?)
+			pageDB.keywords = keywords[:content].split(",")
+		end
+		if(!descrition.nil?)
+			pageDB.description = descrition[:content]
+		end
+
+		if(pageDB.valid?)
+			pageDB.save
+		end
 	end
 
 	def showJobsToDo
